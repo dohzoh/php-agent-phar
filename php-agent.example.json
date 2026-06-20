@@ -1,0 +1,17 @@
+{
+    "ai": {
+        "default_provider": "xrea",
+        "providers": {
+            "xrea": {
+                "url": "http://localhost:18080/v1/chat/completions",
+                "api_key": "",
+                "model": "default"
+            },
+            "openai": {
+                "url": "https://api.openai.com/v1/chat/completions",
+                "api_key": "sk-...",
+                "model": "gpt-4o"
+            }
+        }
+    }
+}
