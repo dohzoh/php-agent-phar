@@ -1,6 +1,6 @@
 # AGENT.md
 
-This repository contains a small PHP-based AI agent intended for use in an XREA-style hosting environment. Keep changes conservative: the project is currently a compact prototype with no test suite and no installed runtime in this workspace.
+This repository contains a small PHP-based AI agent intended for use in an XREA-style hosting environment. Keep changes conservative: the project is currently a compact prototype with a small Pest test baseline and no installed PHP runtime in this workspace.
 
 ## Project Shape
 
@@ -12,6 +12,8 @@ This repository contains a small PHP-based AI agent intended for use in an XREA-
 - `src/CommandRunner.php` executes allow-listed shell commands with a short timeout.
 - `src/Config/ConfigManager.php` loads and saves `~/.php-agent/config.json` by default.
 - `build.php` and `stub.php` are for PHAR packaging.
+- `Dockerfile` and `compose.yml` provide containerized serve/test workflows.
+- `tests/` contains Pest tests for the current low-level behavior.
 
 ## Runtime Assumptions
 
@@ -31,6 +33,8 @@ php bin/agent --exec "pwd"
 php bin/agent -p "Hello"
 composer serve
 composer build
+composer test
+docker compose run --rm test
 ```
 
 When PHP is available, run syntax checks before finishing PHP edits:
@@ -43,6 +47,7 @@ If Composer is available, also run:
 
 ```sh
 composer validate --no-check-publish
+composer test
 ```
 
 ## Safety Notes
@@ -55,7 +60,7 @@ The current allow-list includes commands with broad effects such as `rm`, `mv`, 
 
 ## Known Gaps
 
-- No automated tests are present.
+- Pest is configured under `tests/`, but coverage is still minimal.
 - `README.md` was initially empty.
 - `vendor/autoload.php` is required by the CLI and web entry points but is not tracked.
 - PHAR packaging should be verified after Composer install; the current build layout may need adjustment so PSR-4 autoload paths work inside the archive.

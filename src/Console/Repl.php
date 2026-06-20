@@ -20,7 +20,6 @@ class Repl
     {
         if (!function_exists('readline')) {
             $this->runSimple();
-            return;
         }
 
         echo self::WELCOME . "\n\n";

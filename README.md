@@ -22,6 +22,12 @@ Install dependencies:
 composer install
 ```
 
+Or use Docker:
+
+```sh
+docker compose run --rm test
+```
+
 ## Configuration
 
 Create the default config file:
@@ -115,6 +121,12 @@ Start the built-in PHP server:
 composer serve
 ```
 
+With Docker:
+
+```sh
+docker compose up app
+```
+
 This serves `public/index.php` at:
 
 ```text
@@ -202,7 +214,17 @@ Validate Composer metadata:
 composer validate --no-check-publish
 ```
 
-There is currently no automated test suite.
+Run tests:
+
+```sh
+composer test
+```
+
+Run tests in Docker:
+
+```sh
+docker compose run --rm test
+```
 
 ## Repository Layout
 
@@ -219,6 +241,10 @@ src/Console/Repl.php
 build.php                  PHAR builder
 stub.php                   PHAR entry stub
 php-agent.example.json     Example configuration
+Dockerfile                 PHP development/runtime image
+compose.yml                Local serve/test services
+phpunit.xml.dist           Pest/PHPUnit configuration
+tests/                     Pest tests
 ```
 
 ## Current Limitations
@@ -227,4 +253,4 @@ php-agent.example.json     Example configuration
 - CORS currently allows all origins.
 - Command safety is coarse and based only on the first token.
 - `vendor/autoload.php` must exist before running CLI or HTTP entry points.
-- No tests are included yet.
+- Test coverage is still minimal and focused on current behavior.
