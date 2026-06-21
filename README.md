@@ -3,9 +3,8 @@
 PHP Agent is a small PHP-based AI assistant and command runner designed for constrained hosting environments such as XREA. It provides:
 
 - a CLI REPL and single-prompt mode,
-- a minimal HTTP JSON API,
+- a minimal HTTP JSON API with capability-based execution,
 - an OpenAI-compatible chat completions client,
-- allow-listed shell command execution,
 - optional PHAR packaging.
 
 The project is currently a prototype. Review the safety notes before exposing it to a network or untrusted users.
@@ -61,6 +60,17 @@ The default provider points at a local OpenAI-compatible endpoint:
         "model": "default"
       }
     }
+  },
+  "worker": {
+    "auth_token": "",
+    "legacy_exec_enabled": false,
+    "capabilities": {
+      "process": {
+        "runSafe": {
+          "enabled": false
+        }
+      }
+    }
   }
 }
 ```
@@ -74,6 +84,17 @@ php bin/agent --config /path/to/config-dir --config-show
 ```
 
 The file name inside that directory is always `config.json`.
+
+### Worker configuration keys
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `worker.auth_token` | `""` | Bearer token for API authentication (empty = no auth) |
+| `worker.cors_allowed_origins` | `[]` | Allowed CORS origins |
+| `worker.legacy_exec_enabled` | `false` | Enable legacy `exec` action (disabled by default) |
+| `worker.workspace` | current directory | Workspace root for filesystem capabilities |
+| `worker.capabilities.process.runSafe.enabled` | `false` | Enable the process sandbox capability |
+| `worker.capabilities.process.runSafe.allowed_binaries` | `["php","composer","git"]` | Allowed binaries for `process.runSafe` |
 
 ## CLI Usage
 
@@ -135,7 +156,16 @@ http://localhost:8080
 
 The API accepts `POST` requests with JSON bodies.
 
-Ping:
+### Supported actions
+
+| Action | Description |
+|--------|-------------|
+| `ping` | Health check; returns `{"status":"success","data":"pong"}` |
+| `info` | Returns PHP/environment info |
+| `exec` | Legacy command runner (disabled by default) |
+| `task.execute` | Capability-based execution via `CapabilityRouter` |
+
+### Ping
 
 ```sh
 curl -X POST http://localhost:8080 \
@@ -143,7 +173,7 @@ curl -X POST http://localhost:8080 \
   -d '{"action":"ping"}'
 ```
 
-Info:
+### Info
 
 ```sh
 curl -X POST http://localhost:8080 \
@@ -151,7 +181,7 @@ curl -X POST http://localhost:8080 \
   -d '{"action":"info"}'
 ```
 
-Execute a command:
+### Legacy exec (disabled by default)
 
 ```sh
 curl -X POST http://localhost:8080 \
@@ -159,24 +189,62 @@ curl -X POST http://localhost:8080 \
   -d '{"action":"exec","command":"pwd"}'
 ```
 
-Supported actions are:
+The legacy `exec` action is **disabled by default**. Set `worker.legacy_exec_enabled` to `true` in config to re-enable it.
 
-- `ping`
-- `info`
-- `exec`
+### Capability-based execution (`task.execute`)
+
+```sh
+curl -X POST http://localhost:8080 \
+  -H 'Content-Type: application/json' \
+  -d '{"action":"task.execute","capability":"system.info","input":{}}'
+```
+
+#### Available capabilities
+
+| Capability name | Description |
+|-----------------|-------------|
+| `system.info` | Returns PHP version, OS info, loaded extensions, etc. |
+| `fs.list` | Lists directory contents (sandboxed to workspace) |
+| `fs.read` | Reads a file from the sandboxed workspace |
+| `fs.write` | Writes content to a file in the sandboxed workspace |
+| `process.runSafe` | Runs an allow-listed binary via argv array (no shell) |
+
+#### Process runSafe capability
+
+This capability executes commands using `proc_open` with an argv array (bypasses the shell). It is **disabled by default**. Enable it via config:
+
+```json
+{
+  "worker": {
+    "capabilities": {
+      "process": {
+        "runSafe": {
+          "enabled": true,
+          "allowed_binaries": ["php", "composer", "git"]
+        }
+      }
+    }
+  }
+}
+```
+
+Example:
+
+```sh
+curl -X POST http://localhost:8080 \
+  -H 'Content-Type: application/json' \
+  -d '{"action":"task.execute","capability":"process.runSafe","input":{"argv":["php","-v"]}}'
+```
 
 ## Command Execution Policy
 
-Commands are handled by `CommandRunner`. The current implementation:
+### Legacy `exec` action
 
-- checks only the first command token against a static allow-list,
-- applies a maximum execution time of 25 seconds,
-- captures stdout, stderr, exit code, and duration,
-- returns a structured `TaskResult`.
+The legacy `CommandRunner::run()` method checks only the first command token against a static allow-list and runs commands through `/bin/sh`. It is disabled by default.
 
-The allow-list currently includes common filesystem, language runtime, package manager, and network commands. This is convenient for controlled local use, but it is not sufficient security for public exposure.
+### Capability-based execution
 
-Do not expose `exec` to untrusted users without adding authentication, stricter parsing, argument validation, and a narrower command policy.
+New capabilities use a capability router pattern. Each capability declares its name via `CapabilityInterface::name()` and handles input validation internally. The `process.runSafe` capability uses `CommandRunner::runArgv()` which passes commands as argv arrays directly to `proc_open`, bypassing the shell entirely.
 
 ## Build PHAR
 
@@ -198,7 +266,7 @@ Run it:
 php php-agent.phar --help
 ```
 
-PHAR packaging should be verified after dependency installation. The current packaging path layout may need adjustment if Composer's PSR-4 autoload map does not resolve classes correctly inside the archive.
+PHAR packaging preserves the full directory structure (including `src/` paths) so Composer's PSR-4 autoload resolves correctly inside the archive. The PHAR can be used as a drop-in executable without any external dependencies.
 
 ## Development Notes
 
@@ -232,12 +300,27 @@ docker compose run --rm test
 bin/agent                  CLI entry point
 public/index.php           HTTP JSON API entry point
 src/Agent.php              Application facade
-src/ApiHandler.php         API action dispatcher
-src/CommandRunner.php      Allow-listed command execution
+src/ApiHandler.php         API action dispatcher (with legacy exec)
+src/CommandRunner.php      Allow-listed command execution + runArgv()
 src/TaskResult.php         Structured result object
 src/AI/Client.php          OpenAI-compatible chat client
+src/Capability/
+  CapabilityInterface.php   Capability contract
+  CapabilityRouter.php       Capability executor
+  SystemInfoCapability.php  system.info capability
+  Process/
+    RunSafeCapability.php   process.runSafe capability
+src/Filesystem/
+  PathSandbox.php           Workspace path validator
+  ListCapability.php        fs.list capability
+  ReadCapability.php        fs.read capability
+  WriteCapability.php       fs.write capability
 src/Config/ConfigManager.php
 src/Console/Repl.php
+src/Task/
+  TaskRecord.php            Immutable task record DTO
+  TaskStoreInterface.php    Contract for task stores
+  FileTaskStore.php         JSON-backed file store
 build.php                  PHAR builder
 stub.php                   PHAR entry stub
 php-agent.example.json     Example configuration
@@ -249,8 +332,9 @@ tests/                     Pest tests
 
 ## Current Limitations
 
-- No authentication on the HTTP API.
-- CORS currently allows all origins.
-- Command safety is coarse and based only on the first token.
+- CORS currently allows all origins when configured.
+- Legacy `exec` action is disabled by default; re-enable via config.
+- Command safety for the legacy `exec` path is coarse (first-token check only).
+- The `process.runSafe` capability must be explicitly enabled in config.
 - `vendor/autoload.php` must exist before running CLI or HTTP entry points.
 - Test coverage is still minimal and focused on current behavior.

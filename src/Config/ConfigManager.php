@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Xrea\Agent\Config;
 
 class ConfigManager
@@ -85,6 +87,23 @@ class ConfigManager
                         'url' => 'http://localhost:18080/v1/chat/completions',
                         'api_key' => '',
                         'model' => 'default',
+                    ],
+                ],
+            ],
+            'worker' => [
+                'auth_token' => '',
+                'cors_allowed_origins' => [],
+                'legacy_exec_enabled' => false,
+                'workspace' => getcwd() ?: '.',
+                'task_store' => [
+                    'path' => null,
+                ],
+                'capabilities' => [
+                    'process' => [
+                        'runSafe' => [
+                            'enabled' => false,
+                            'allowed_binaries' => ['php', 'composer', 'git'],
+                        ],
                     ],
                 ],
             ],

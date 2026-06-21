@@ -46,7 +46,18 @@ if (isset($options['c'])) {
     $configDir = is_array($options['c']) ? end($options['c']) : $options['c'];
 }
 if (isset($options['config'])) {
-    $configDir = is_array($options['config']) ? end($options['config']) : $options['config'];
+    $val = $options['config'];
+    if ($val === false) {
+        // getopt with :: doesn't pick up space-separated values for long opts
+        // look at raw argv for the next argument after --config
+        foreach ($argv as $i => $arg) {
+            if ($arg === '--config' && isset($argv[$i + 1])) {
+                $val = $argv[$i + 1];
+                break;
+            }
+        }
+    }
+    $configDir = is_array($val) ? end($val) : $val;
 }
 
 $agent = new Agent($configDir);

@@ -13,5 +13,22 @@
                 "model": "gpt-4o"
             }
         }
+    },
+    "worker": {
+        "auth_token": "",
+        "cors_allowed_origins": [],
+        "legacy_exec_enabled": false,
+        "workspace": ".",
+        "task_store": {
+            "path": null
+        },
+        "capabilities": {
+            "process": {
+                "runSafe": {
+                    "enabled": false,
+                    "allowed_binaries": ["php", "composer", "git"]
+                }
+            }
+        }
     }
 }
