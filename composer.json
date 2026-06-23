@@ -19,7 +19,7 @@
     "bin/agent"
   ],
   "scripts": {
-    "build": "php build.php",
+    "build": "php -d phar.readonly=0 build.php",
     "serve": "php -S 0.0.0.0:8080 -t public",
     "test": "pest",
     "test:unit": "pest tests/Unit"
