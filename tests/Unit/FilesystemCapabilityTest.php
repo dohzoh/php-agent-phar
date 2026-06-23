@@ -112,4 +112,48 @@ it('filesystem capabilities reject outside workspace paths', function (): void {
     // WriteCapability rejects ../bad
     expect((new WriteCapability($sandbox))->execute(['path' => '../other/bad', 'content' => 'x'])->status)->toBe('error')
         ->and((new WriteCapability($sandbox))->execute(['path' => '../other/bad', 'content' => 'x'])->error)->toContain('outside workspace');
+
+    // Cleanup
+    unlink("{$sandbox->workspace()}/t.txt");
+    rmdir("{$sandbox->workspace()}/ok");
+});
+
+it('rejects read via non-existing intermediate + .. traversal', function (): void {
+    $base = sys_get_temp_dir() . '/php-agent-test-fs-' . bin2hex(random_bytes(4));
+    mkdir("{$base}/ws", 0755, true);
+    mkdir("{$base}/outside-dir", 0755, true);
+    file_put_contents("{$base}/outside-dir/secret.txt", 'leaked');
+
+    $sandbox = new PathSandbox("{$base}/ws");
+    $capability = new ReadCapability($sandbox, 1048576);
+
+    $result = $capability->execute(['path' => 'nonexistent/../../outside-dir/secret.txt']);
+
+    expect($result->status)->toBe('error')
+        ->and($result->error)->toContain('outside workspace');
+
+    unlink("{$base}/outside-dir/secret.txt");
+    rmdir("{$base}/outside-dir");
+    rmdir("{$base}/ws");
+});
+
+it('rejects write via non-existing intermediate + .. traversal', function (): void {
+    $base = sys_get_temp_dir() . '/php-agent-test-fs-' . bin2hex(random_bytes(4));
+    mkdir("{$base}/ws", 0755, true);
+    mkdir("{$base}/outside-dir", 0755, true);
+
+    $sandbox = new PathSandbox("{$base}/ws");
+    $capability = new WriteCapability($sandbox, 1048576);
+
+    $result = $capability->execute([
+        'path' => 'nonexistent/../../outside-dir/pwned.txt',
+        'content' => 'malicious',
+    ]);
+
+    expect($result->status)->toBe('error')
+        ->and($result->error)->toContain('outside workspace')
+        ->and(file_exists("{$base}/outside-dir/pwned.txt"))->toBeFalse();
+
+    rmdir("{$base}/outside-dir");
+    rmdir("{$base}/ws");
 });

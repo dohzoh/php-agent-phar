@@ -6,12 +6,19 @@ namespace Xrea\Agent\Filesystem;
 
 final class PathSandbox
 {
-    private string $resolvedWorkspace;
+    private readonly string $resolvedWorkspace;
 
     public function __construct(
         private readonly string $workspace,
     ) {
-        $this->resolvedWorkspace = realpath($this->workspace) ?: rtrim(realpath('.'), DIRECTORY_SEPARATOR);
+        if (!file_exists($this->workspace)) {
+            throw new \RuntimeException("Workspace does not exist: {$this->workspace}");
+        }
+        $real = realpath($this->workspace);
+        if ($real === false) {
+            throw new \RuntimeException("Cannot resolve workspace path: {$this->workspace}");
+        }
+        $this->resolvedWorkspace = rtrim($real, DIRECTORY_SEPARATOR);
     }
 
     public function workspace(): string
@@ -19,85 +26,99 @@ final class PathSandbox
         return $this->resolvedWorkspace;
     }
 
-    /**
-     * Resolves a path relative to the workspace.
-     * Returns null if the resolved path is outside the workspace.
-     */
     public function resolve(string $path): ?string
     {
-        // Reject absolute paths that are not under workspace
         if ($path !== '' && $path[0] === DIRECTORY_SEPARATOR) {
             return null;
         }
 
-        // Join resolved workspace with requested path
         if ($path === '') {
-            $fullPath = $this->resolvedWorkspace;
-        } else {
-            $fullPath = rtrim($this->resolvedWorkspace, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . ltrim($path, DIRECTORY_SEPARATOR);
+            return $this->resolvedWorkspace;
         }
 
-        // If the target exists and is real, use realpath for safety (symlink resolution)
+        $fullPath = $this->resolvedWorkspace . DIRECTORY_SEPARATOR . ltrim($path, DIRECTORY_SEPARATOR);
+
         if (file_exists($fullPath)) {
             $real = realpath($fullPath);
             if ($real === false) {
                 return null;
             }
-            $fullPath = $real;
-        } else {
-            // For non-existing paths, try to resolve the deepest existing ancestor
-            $workspaceBase = rtrim($this->resolvedWorkspace, DIRECTORY_SEPARATOR);
-
-            // Walk up from the target until we find an existing directory
-            $candidate = dirname($fullPath);
-            while (!is_dir($candidate) && $candidate !== $workspaceBase && strlen($candidate) > strlen($workspaceBase)) {
-                $candidate = dirname($candidate);
-            }
-
-            if ($candidate === '' || realpath($candidate) === false) {
+            if (!$this->isInsideWorkspace($this->resolvedWorkspace, rtrim($real, DIRECTORY_SEPARATOR))) {
                 return null;
             }
-
-            // Verify the found ancestor is within workspace (exact match or prefix + separator)
-            $realCandidate = rtrim(realpath($candidate), DIRECTORY_SEPARATOR);
-            if (!$this->isInsideWorkspace(rtrim($workspaceBase, DIRECTORY_SEPARATOR), $realCandidate)) {
-                return null;
-            }
-
-            // Reconstruct the full path from this known-good ancestor + remaining relative parts
-            $relativeFromAncestor = str_replace(rtrim($candidate, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR, '', $fullPath);
-            $fullPath = rtrim(realpath($candidate), DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . ltrim($relativeFromAncestor, DIRECTORY_SEPARATOR);
-
-            // Final check: ensure the constructed path is within workspace base
-            if (!$this->isInsideWorkspace(rtrim($workspaceBase, DIRECTORY_SEPARATOR), rtrim($fullPath, DIRECTORY_SEPARATOR))) {
-                return null;
-            }
+            return $real;
         }
 
-        // Final check: resolved path must be inside or equal to workspace (exact match OR prefix + separator)
-        $finalCheck = rtrim($fullPath, DIRECTORY_SEPARATOR);
-        if (!$this->isInsideWorkspace(rtrim($this->resolvedWorkspace, DIRECTORY_SEPARATOR), $finalCheck)) {
+        $relativePath = ltrim($path, DIRECTORY_SEPARATOR);
+
+        if ($this->pathEscapesWorkspace($relativePath)) {
             return null;
         }
 
-        // Symlink safety: verify the resolved path is still within workspace after resolution
-        $realResolved = realpath($fullPath);
-        if ($realResolved !== false) {
-            if (!$this->isInsideWorkspace(rtrim($this->resolvedWorkspace, DIRECTORY_SEPARATOR), rtrim($realResolved, DIRECTORY_SEPARATOR))) {
-                return null;
-            }
-            $fullPath = $realResolved;
+        $normalizedRelative = $this->normalizePath($relativePath);
+
+        if ($normalizedRelative === '') {
+            return $this->resolvedWorkspace;
         }
 
-        return $fullPath;
+        $normalizedFull = $this->resolvedWorkspace . DIRECTORY_SEPARATOR . $normalizedRelative;
+
+        if (!$this->isInsideWorkspace($this->resolvedWorkspace, rtrim($normalizedFull, DIRECTORY_SEPARATOR))) {
+            return null;
+        }
+
+        return $normalizedFull;
     }
 
-    /**
-     * Check if \$path is inside or equal to \$workspaceBase.
-     * Uses exact match OR prefix + DIRECTORY_SEPARATOR to prevent workspace escape (e.g., /tmp/base/ws2 escapes /tmp/base/ws).
-     */
+    private function normalizePath(string $path): string
+    {
+        $parts = explode(DIRECTORY_SEPARATOR, $path);
+        $resolved = [];
+        foreach ($parts as $part) {
+            if ($part === '' || $part === '.') {
+                continue;
+            } elseif ($part === '..') {
+                if (count($resolved) > 0) {
+                    array_pop($resolved);
+                }
+            } else {
+                $resolved[] = $part;
+            }
+        }
+        return implode(DIRECTORY_SEPARATOR, $resolved);
+    }
+
     private function isInsideWorkspace(string $workspaceBase, string $path): bool
     {
-        return $path === $workspaceBase || strpos($path, $workspaceBase . DIRECTORY_SEPARATOR) === 0;
+        return $path === $workspaceBase
+            || strpos($path, $workspaceBase . DIRECTORY_SEPARATOR) === 0;
+    }
+
+    private function pathEscapesWorkspace(string $relativePath): bool
+    {
+        $parts = explode(DIRECTORY_SEPARATOR, $relativePath);
+        $stack = [];
+
+        foreach ($parts as $part) {
+            if ($part === '' || $part === '.') {
+                continue;
+            } elseif ($part === '..') {
+                if (empty($stack)) {
+                    return true;
+                }
+                array_pop($stack);
+                $reconstructed = implode(DIRECTORY_SEPARATOR, $stack);
+                if ($reconstructed !== '') {
+                    $physicalPath = $this->resolvedWorkspace . DIRECTORY_SEPARATOR . $reconstructed;
+                    if (!is_dir($physicalPath)) {
+                        return true;
+                    }
+                }
+            } else {
+                $stack[] = $part;
+            }
+        }
+
+        return false;
     }
 }
