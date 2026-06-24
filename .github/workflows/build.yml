@@ -16,15 +16,15 @@ permissions:
   contents: read
 
 jobs:
-  build:
+  test:
     runs-on: ubuntu-latest
     container:
       image: php:${{ matrix.php }}-cli-alpine
 
     strategy:
-      max-parallel: 2
+      max-parallel: 3
       matrix:
-        php: ["8.1", "8.2", "8.3"]
+        php: ["8.1", "8.2", "8.3", "8.4"]
 
     steps:
       - uses: actions/checkout@v4
@@ -58,17 +58,42 @@ jobs:
       - name: Run tests
         run: composer test
 
+  build:
+    needs: test
+    if: github.event_name != 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    container:
+      image: php:8.1-cli-alpine
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: apk add --no-cache bash curl git unzip
+
+      - name: Install Composer
+        run: |
+          php -r "copy('https://getcomposer.org/installer', 'composer-setup.php');"
+          php composer-setup.php --install-dir=/usr/local/bin --filename=composer
+          rm composer-setup.php
+
+      - name: Install dependencies
+        run: |
+          composer config --global cache-dir /tmp/composer-cache
+          composer install --prefer-dist --no-progress
+
       - name: Build PHAR
         run: php -d phar.readonly=0 build.php
 
       - name: Upload PHAR artifact
         uses: actions/upload-artifact@v4
         with:
-          name: php-agent-${{ matrix.php }}.phar
+          name: php-agent.phar
           path: php-agent.phar
 
   release:
     if: github.event_name == 'workflow_dispatch'
+    needs: test
     runs-on: ubuntu-latest
     container:
       image: php:8.1-cli-alpine
