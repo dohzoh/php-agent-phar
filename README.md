@@ -9,17 +9,23 @@ PHP Agent is a small PHP-based AI assistant and command runner designed for cons
 
 The project is currently a prototype. Review the safety notes before exposing it to a network or untrusted users.
 
-## Requirements
+## Installation
 
-- PHP `>=8.1`
-- PHP extensions: `curl`, `phar`
-- Composer
-
-Install dependencies:
+Download the latest PHAR:
 
 ```sh
-composer install
+curl -L -o php-agent.phar https://github.com/dohzoh/php-agent-phar/releases/latest/download/php-agent.phar
+chmod +x php-agent.phar
 ```
+
+Run it directly:
+
+```sh
+./php-agent.phar --help
+```
+
+If you prefer to build from source, see the **Build PHAR** section below.
+
 
 Or use Docker:
 
